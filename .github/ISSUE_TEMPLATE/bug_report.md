@@ -34,6 +34,7 @@ Please provide logs from the LSPosed Manager:
 1. Open LSPosed Manager.
 2. Go to the "Log" tab.
 3. Export and attach the log file here or paste the relevant parts.
+
 *Make sure to enable the **DEBUG** flag in the module code if you are building from source!*
 
 **Device Information:**
