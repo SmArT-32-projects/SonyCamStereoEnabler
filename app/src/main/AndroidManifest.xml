@@ -13,7 +13,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Enables stereo sound record in Sony camera." />
+            android:value="Enables stereo audio recording in Sony Camera apps." />
         <meta-data
             android:name="xposedminversion"
             android:value="82" />
