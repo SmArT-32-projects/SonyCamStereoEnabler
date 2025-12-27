@@ -30,3 +30,6 @@ Theoretically compatible with all Xperia devices on custom ROMs where the stereo
 ## Feedback and Contributions
 If you encounter a bug or have a suggestion, please open an issue!
 * **[Report a Bug](https://github.com/SmArT-32-projects/SonyCamStereoEnabler/issues/new?template=bug_report.md)**
+
+## Credits
+* Thanks to **[tongyuantongyu](https://github.com/tongyuantongyu)** for the code refactoring.
