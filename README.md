@@ -22,7 +22,7 @@ You should use this module only if you are experiencing a bug where the camera a
 1. Ensure you have **Magisk** (or KernelSU/APatch) and the **LSPosed Framework** installed.
 2. Download and install the module's APK.
 3. Open the LSPosed Manager and **activate** the module.
-4. Select your **Sony Camera** app (Camera or Video Pro) in the module's scope.
+4. Select your **Sony Camera** app (Camera, Video Pro, or Cinema Pro) in the module's scope.
 
 ## Compatibility
 Theoretically compatible with all Xperia devices on custom ROMs where the stereo recording bug is present.
