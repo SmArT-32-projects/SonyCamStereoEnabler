@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="module_scope" translatable="false">
+        <item>jp.co.sony.mc.videopro</item>
+        <item>com.sonymobile.cinemapro</item>
+        <item>jp.co.sony.mc.cameraapp</item>
+    </string-array>
+</resources>

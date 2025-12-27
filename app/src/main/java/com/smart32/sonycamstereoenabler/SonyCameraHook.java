@@ -1,5 +1,9 @@
 package com.smart32.sonycamstereoenabler;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -15,36 +19,62 @@ public class SonyCameraHook implements IXposedHookLoadPackage {
     private static final String MEDIA_RECORDER_CLASS = "com.sonymobile.android.media.MediaRecorder";
     private static final String AUDIO_RECORD_CLASS = "android.media.AudioRecord";
 
-    private static final String VIDEOPRO_PKG_BASE = "jp.co.sony.mc.videopro";
-    private static final String CAMERA_PKG_BASE = "jp.co.sony.mc.camera";
+    private static class TargetConfiguration {
+        String pkgBase;
+        String micKeySource;
+        String proSettingClass;
+        String[] validCallSources;
+
+        public TargetConfiguration(String pkgBase, String micKeySource, String proSettingClass, String[] validCallSources) {
+            this.pkgBase = pkgBase;
+            this.micKeySource = micKeySource;
+            this.proSettingClass = proSettingClass;
+            this.validCallSources = validCallSources;
+        }
+    }
+
+    private static final TargetConfiguration[] targets = {
+            new TargetConfiguration(
+                    "jp.co.sony.mc.videopro",
+                    ".setting.CommonSettings",
+                    ".setting.CameraProSetting",
+                    new String[]{
+                            ".view.widget.AudioLevelWidget",
+                            ".recorder"
+                    }
+            ),
+            new TargetConfiguration(
+                    "jp.co.sony.mc.camera",
+                    ".setting.CameraSettings",
+                    ".setting.CameraProSetting",
+                    new String[]{
+                            ".recorder.AudioLevelMonitor"
+                    }
+            ),
+            new TargetConfiguration(
+                    "com.sonymobile.cinemapro",
+                    "=LR",
+                    "",
+                    new String[]{
+                            ".view.widget.AudioLevelWidget",
+                            ".recorder"
+                    }
+            ),
+    };
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
-        boolean isVideoPro;
-
         // Use startsWith to support modded package names
-        if (lpparam.packageName.startsWith(VIDEOPRO_PKG_BASE)) {
-            isVideoPro = true;
-        } else if (lpparam.packageName.startsWith(CAMERA_PKG_BASE)) {
-            isVideoPro = false;
-        } else {
+        TargetConfiguration targetConfig = Arrays.stream(targets)
+                .filter(config -> lpparam.packageName.startsWith(config.pkgBase))
+                .findFirst()
+                .orElse(null);
+
+        if (targetConfig == null) {
             return;
         }
 
         if (DEBUG) XposedBridge.log(TAG + ": Loaded target package: " + lpparam.packageName);
-
-        // Define internal class names based on the app type
-        final String settingPackage = isVideoPro ? (VIDEOPRO_PKG_BASE + ".setting") : (CAMERA_PKG_BASE + ".setting");
-        final String proSettingClass = settingPackage + ".CameraProSetting";
-        final String commonSettingsClass = settingPackage + ".CommonSettings";
-        final String cameraSettingsClass = settingPackage + ".CameraSettings";
-        final String recorderPackage = isVideoPro ? (VIDEOPRO_PKG_BASE + ".recorder") : (CAMERA_PKG_BASE + ".recorder");
-        final String audioLevelMonitorClass = recorderPackage + ".AudioLevelMonitor";
-
-        // VideoPro widget path is slightly different
-        final String audioLevelWidgetClass = isVideoPro
-                ? "jp.co.sony.mc.videopro.view.widget.AudioLevelWidget"
-                : recorderPackage.replace("recorder", "view.widget") + ".AudioLevelWidget";
 
         // 1. Hook setAudioSource
         XposedHelpers.findAndHookMethod(MEDIA_RECORDER_CLASS, lpparam.classLoader, "setAudioSource", int.class, new XC_MethodHook() {
@@ -52,7 +82,7 @@ public class SonyCameraHook implements IXposedHookLoadPackage {
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 if (DEBUG) XposedBridge.log(TAG + ": setAudioSource original: " + param.args[0]);
 
-                String micName = getCurrentMicSetting(lpparam.classLoader, isVideoPro, commonSettingsClass, cameraSettingsClass, proSettingClass);
+                String micName = getCurrentMicSetting(lpparam.classLoader, targetConfig);
 
                 if ("LR".equals(micName)) {
                     param.args[0] = 1; // Stereo
@@ -70,31 +100,38 @@ public class SonyCameraHook implements IXposedHookLoadPackage {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                         // Check call stack to ensure we only hook inside camera context
-                        if (!isCalledFromCamera(Thread.currentThread().getStackTrace(), isVideoPro, audioLevelMonitorClass, audioLevelWidgetClass, recorderPackage)) {
+                        if (!isCalledFromCamera(Thread.currentThread().getStackTrace(), targetConfig)) {
                             return;
                         }
 
-                        if (DEBUG) XposedBridge.log(TAG + ": AudioRecord hook. Original: " + param.args[0]);
+                        if (DEBUG)
+                            XposedBridge.log(TAG + ": AudioRecord hook. Original: " + param.args[0]);
 
-                        String micName = getCurrentMicSetting(lpparam.classLoader, isVideoPro, commonSettingsClass, cameraSettingsClass, proSettingClass);
+                        String micName = getCurrentMicSetting(lpparam.classLoader, targetConfig);
                         if ("LR".equals(micName)) {
                             param.args[0] = 1;
-                            if (DEBUG) XposedBridge.log(TAG + ": Preview forced to Stereo (1) for LR");
+                            if (DEBUG)
+                                XposedBridge.log(TAG + ": Preview forced to Stereo (1) for LR");
                         } else {
                             param.args[0] = 5;
-                            if (DEBUG) XposedBridge.log(TAG + ": Preview forced to Mono (5) for " + micName);
+                            if (DEBUG)
+                                XposedBridge.log(TAG + ": Preview forced to Mono (5) for " + micName);
                         }
                     }
                 });
     }
 
     // Helper method to get the current MIC setting value from the app via reflection.
-    private String getCurrentMicSetting(ClassLoader classLoader, boolean isVideoPro, String commonSettingsClass, String cameraSettingsClass, String proSettingClass) {
+    private String getCurrentMicSetting(ClassLoader classLoader, TargetConfiguration config) {
+        if (config.micKeySource.startsWith("=")) {
+            return config.micKeySource.substring(1);
+        }
+
         try {
-            String micSettingsClass = isVideoPro ? commonSettingsClass : cameraSettingsClass;
+            String micSettingsClass = config.pkgBase + config.micKeySource;
             Class<?> micSettingsClazz = XposedHelpers.findClass(micSettingsClass, classLoader);
             Object micKey = XposedHelpers.getStaticObjectField(micSettingsClazz, "MIC");
-            Class<?> proSettingClazz = XposedHelpers.findClass(proSettingClass, classLoader);
+            Class<?> proSettingClazz = XposedHelpers.findClass(config.pkgBase + config.proSettingClass, classLoader);
             Object settingInstance = XposedHelpers.callStaticMethod(proSettingClazz, "getInstance");
             Object micValue = XposedHelpers.callMethod(settingInstance, "get", micKey);
             return (micValue != null) ? micValue.toString() : "UNKNOWN";
@@ -105,17 +142,15 @@ public class SonyCameraHook implements IXposedHookLoadPackage {
     }
 
     // Helper method to check if the execution flow comes from Camera/VideoPro specific classes.
-    private boolean isCalledFromCamera(StackTraceElement[] stack, boolean isVideoPro, String audioLevelMonitorClass, String audioLevelWidgetClass, String recorderPackage) {
-        for (StackTraceElement element : stack) {
-            String className = element.getClassName();
-            if (!isVideoPro) {
-                // Logic for Camera App
-                if (className.contains(audioLevelMonitorClass)) return true;
-            } else {
-                // Logic for VideoPro
-                if (className.contains(audioLevelWidgetClass) || className.contains(recorderPackage)) return true;
-            }
-        }
-        return false;
+    private boolean isCalledFromCamera(StackTraceElement[] stack, TargetConfiguration config) {
+        List<String> validCallSources = Arrays.stream(config.validCallSources)
+                .map(source -> config.pkgBase + source)
+                .collect(Collectors.toList());
+
+        // Check if any element in the stack trace comes from a valid class.
+        return Arrays.stream(stack)
+                .anyMatch(element -> validCallSources.stream()
+                        .anyMatch(element.getClassName()::contains));
     }
 }
+
